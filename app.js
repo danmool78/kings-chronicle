@@ -43,4 +43,44 @@ $('#era').innerHTML=`<div class="era-nav"><button id="olderEra" ${year>=931?'dis
 $('#olderEra').onclick=()=>eraStep('older');$('#newerEra').onclick=()=>eraStep('newer');$('#eraFull').onclick=()=>{setMode('timeline');requestAnimationFrame(locate);};document.querySelectorAll('[data-era-king]').forEach(b=>b.onclick=()=>choose(b.dataset.eraKing));}
 function setupMobile(){document.querySelectorAll('[data-mobile-mode]').forEach(b=>b.onclick=()=>{closeDetails();setMode(b.dataset.mobileMode);});$('#sheetback').onclick=closeDetails;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDetails();});const mq=matchMedia('(max-width:700px)');mq.addEventListener('change',e=>{closeDetails();if(e.matches)setMode('era');else if(mode==='era')setMode('timeline');});}
 fetch('data.json').then(r=>{if(!r.ok)throw Error('data');return r.json()}).then(data=>{kings=data;[...new Set(kings.map(k=>k.family))].forEach(f=>{$('#family').add(new Option(f,f));$('#mobileFamily').add(new Option(f,f));});render();renderDetail();$('#search').oninput=e=>{query=e.target.value.trim();$('#mobileSearch').value=e.target.value;render();};$('#mobileSearch').oninput=e=>{query=e.target.value.trim();$('#search').value=e.target.value;render();};$('#mobileFamily').onchange=e=>{family=e.target.value;$('#family').value=family;render();};$('#family').onchange=e=>{family=e.target.value;$('#mobileFamily').value=family;render();};document.querySelectorAll('[data-side]').forEach(btn=>btn.onclick=()=>{side=btn.dataset.side;document.querySelectorAll('[data-side]').forEach(b=>b.classList.toggle('active',b===btn));render();});$('#year').oninput=compare;$('#locate').onclick=locate;$('#minus').onclick=()=>{zoom=Math.max(.35,zoom-.15);applyZoom();};$('#plus').onclick=()=>{zoom=Math.min(1.8,zoom+.15);applyZoom();};['timeline','cards','scores','original'].forEach(m=>$('#'+m+'Tab').onclick=()=>setMode(m));$('#about').onclick=()=>$('#help').showModal();$('#closehelp').onclick=()=>$('#help').close();zoom=innerWidth<700?.6:Math.min(.85,(vp.clientWidth-18)/1120);applyZoom();if(innerWidth<=700)setMode('era');setupMobile();}).catch(()=>{$('#canvas').innerHTML='<p class="empty">연대표를 불러오지 못했습니다. 페이지를 새로고침해 주세요.</p>';});
+/* ---------- 랜딩페이지 (첫 시작 화면) · 공유 · 앱 설치 — 그길 앱과 같은 구성 ---------- */
+const toast=msg=>{const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),2600);};
+// 뒤에서 흐르는 초상: 끊김 없이 돌도록 같은 줄을 두 번 잇는다
+[['n',19],['s',20]].forEach(([s,n])=>{const imgs=Array.from({length:n},(_,i)=>`<img src="assets/${s}${i}.webp" alt="" loading="lazy">`).join('');$('.faces.'+s).innerHTML=imgs+imgs;});
+// 떠 있는 동안 뒤 화면은 inert — Tab 초점이 가려진 단추로 가지 않게 (창(dialog)은 빼 둔다: 랜딩에서 연 설치 안내를 눌러야 하므로)
+function showIntro(){const box=$('#intro');[...document.body.children].forEach(el=>{if(el!==box&&!/^(SCRIPT|DIALOG)$/.test(el.tagName)&&el.id!=='toast')el.inert=true;});document.body.classList.add('intro-open');box.hidden=false;box.classList.remove('out');box.scrollTop=0;$('.go-start',box).focus({preventScroll:true});}
+function closeIntro(){const box=$('#intro');if(box.hidden||box.classList.contains('out'))return;box.classList.add('out');[...document.body.children].forEach(el=>el.inert=false);document.body.classList.remove('intro-open');setTimeout(()=>{box.hidden=true;box.classList.remove('out');},450);}
+document.querySelectorAll('.go-start').forEach(b=>b.onclick=closeIntro);
+$('.land-down').onclick=e=>{e.preventDefault();$('#landWhat').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});};
+$('.brand').onclick=e=>{e.preventDefault();closeDetails();showIntro();};
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#intro').hidden&&!document.querySelector('dialog[open]'))closeIntro();});
+showIntro();
+// 이 앱 공유하기: 휴대폰은 기기의 공유 창(카톡·문자 등), 공유 창이 없는 컴퓨터는 주소를 복사해 알린다
+// 제목과 주소만 넘긴다 — 받는 쪽(카톡·메시지)은 주소로 og 미리보기 카드를 만든다
+document.querySelectorAll('.share-app').forEach(b=>b.onclick=async()=>{const url=location.origin+'/',title='열왕기 — 두 왕국의 연대기';if(navigator.share){try{await navigator.share({title,url});}catch{/* 공유 창을 닫음 */}return;}try{await navigator.clipboard.writeText(url);toast('주소를 복사했습니다. 붙여 넣어 나눠 보세요.');}catch{prompt('이 앱 공유하기',url);}});
+// 앱으로 설치하기: 브라우저가 설치 창을 줄 수 있으면(안드로이드 크롬 등, beforeinstallprompt) '지금 설치하기' 단추 하나로 끝내고,
+// 아이폰은 Safari의 '홈 화면에 추가' 순서를, 그 밖은 브라우저 메뉴 순서를 그림과 함께 보인다
+let installEv=null;
+(()=>{const installBtn=$('.install-app'),dlg=$('#installDlg'),ua=navigator.userAgent;
+const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+const ios=/iphone|ipad|ipod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const inApp=/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|; wv\)/i.test(ua); // 메신저 등 앱 안 브라우저는 설치를 못 한다
+installBtn.hidden=!!standalone;
+const ico=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICO={share:ico('<path d="M12 3v12M8 7l4-4 4 4"/><path d="M7 10H5.5v10.5h13V10H17"/>'),add:ico('<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M12 8.5v7M8.5 12h7"/>'),menu:ico('<circle cx="12" cy="5.5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="18.5" r="1.3"/>'),phone:ico('<rect x="6.5" y="2.5" width="11" height="19" rx="2.2"/><path d="M12 7.5v7m-3-3 3 3 3-3"/>')};
+const steps=list=>`<ol class="install-steps">${list.map(([t,i])=>`<li><span>${t}</span>${ICO[i]}</li>`).join('')}</ol>`;
+// 앱 안 브라우저에서 바깥 브라우저로 넘기는 주소: 카카오톡은 자체 주소(iOS는 Safari, 안드로이드는 기본 브라우저로),
+// 그 밖의 안드로이드 앱 안 브라우저는 크롬 intent. ?install이 붙어 열리면 곧바로 이 안내 창을 다시 띄운다
+const outUrl=()=>{const to=`${location.origin}/?install`;if(/KAKAOTALK/i.test(ua))return `kakaotalk://web/openExternal?url=${encodeURIComponent(to)}`;if(inApp&&/android/i.test(ua))return `intent://${location.host}/?install#Intent;scheme=https;package=com.android.chrome;end`;return null;};
+const render=()=>{const body=$('#installBody'),out=inApp&&outUrl();
+if(out){body.innerHTML=`<p class="install-note">앱 안 브라우저에서는 설치할 수 없습니다. 아래 단추로 열면 그 브라우저에서 설치 안내가 이어집니다.</p><a class="goldbtn" style="margin-top:14px" href="${out}">${ios?'Safari로 열기':'크롬(기본 브라우저)으로 열기'}</a>`;}
+else if(installEv){body.innerHTML='<button class="goldbtn" id="installNow">지금 설치하기</button><p class="fine">설치 창이 뜨면 ‘설치’를 누르면 끝입니다.</p>';$('#installNow').onclick=async()=>{const ev=installEv;installEv=null;ev.prompt();try{await ev.userChoice;}catch{/* 닫음 */}dlg.close();};}
+else{body.innerHTML=(ios?steps([['Safari 아래쪽(아이패드는 위쪽)의 공유 단추를 누릅니다','share'],['목록을 올려 ‘홈 화면에 추가’를 누릅니다','add'],['오른쪽 위 ‘추가’를 누르면 홈 화면에 ‘열왕기’가 생깁니다','phone']]):steps([['브라우저 오른쪽 위 메뉴(⋮)를 누릅니다','menu'],['‘앱 설치’ 또는 ‘홈 화면에 추가’를 누릅니다','phone'],['‘설치’를 누르면 홈 화면에 ‘열왕기’가 생깁니다','add']]))+(inApp?'<p class="install-note">카카오톡 같은 앱 안에서 열었다면, 메뉴에서 ‘다른 브라우저로 열기’를 먼저 누르세요.</p>':'');}};
+installBtn.onclick=()=>{render();if(!dlg.open)dlg.showModal();};
+// 설치 창 이벤트는 페이지를 연 직후에 올 수 있어 일찍 받아 둔다. 안내 창을 연 뒤에 오면 '지금 설치하기'로 바꿔 그린다
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEv=e;if(dlg.open)render();});
+addEventListener('appinstalled',()=>{installBtn.hidden=true;dlg.close();});
+// 앱 안 브라우저에서 넘어와 열렸으면 주소의 ?install을 지우고(홈 화면에 추가할 주소에 남지 않게) 안내 창을 바로 띄운다
+if(new URLSearchParams(location.search).has('install')){history.replaceState(null,'',location.pathname+location.hash);if(!standalone)installBtn.onclick();}
+$('#closeInstall').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close();};})();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
